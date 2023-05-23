@@ -933,11 +933,13 @@ static int igb_request_msix(struct igb_adapter *adapter)
 	struct e1000_hw *hw = &adapter->hw;
 	int i, err = 0, vector = 0, free_vector = 0;
 
+	// 为其他中断向量请求中断处理函数
 	err = request_irq(adapter->msix_entries[vector].vector,
 			  igb_msix_other, 0, netdev->name, adapter);
 	if (err)
 		goto err_out;
 
+	// 为每个队列向量请求中断处理函数
 	for (i = 0; i < adapter->num_q_vectors; i++) {
 		struct igb_q_vector *q_vector = adapter->q_vector[i];
 
@@ -945,6 +947,7 @@ static int igb_request_msix(struct igb_adapter *adapter)
 
 		q_vector->itr_register = hw->hw_addr + E1000_EITR(vector);
 
+		// 根据队列类型设置队列向量的名称
 		if (q_vector->rx.ring && q_vector->tx.ring)
 			sprintf(q_vector->name, "%s-TxRx-%u", netdev->name,
 				q_vector->rx.ring->queue_index);
@@ -957,6 +960,7 @@ static int igb_request_msix(struct igb_adapter *adapter)
 		else
 			sprintf(q_vector->name, "%s-unused", netdev->name);
 
+		// 为队列向量请求中断处理函数
 		err = request_irq(adapter->msix_entries[vector].vector,
 				  igb_msix_ring, 0, q_vector->name,
 				  q_vector);
@@ -964,11 +968,13 @@ static int igb_request_msix(struct igb_adapter *adapter)
 			goto err_free;
 	}
 
+	// 配置 MSIX 中断
 	igb_configure_msix(adapter);
 	return 0;
 
 err_free:
 	/* free already assigned IRQs */
+	// 释放已分配的中断
 	free_irq(adapter->msix_entries[free_vector++].vector, adapter);
 
 	vector--;
@@ -1356,6 +1362,7 @@ err_alloc_q_vectors:
  *  Attempts to configure interrupts using the best available
  *  capabilities of the hardware and kernel.
  **/
+// 注册中断函数
 static int igb_request_irq(struct igb_adapter *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
@@ -3031,6 +3038,7 @@ int igb_setup_rx_resources(struct igb_ring *rx_ring)
 	struct device *dev = rx_ring->dev;
 	int size;
 
+	// 申请 igb_rx_buffer 数组内存
 	size = sizeof(struct igb_rx_buffer) * rx_ring->count;
 
 	rx_ring->rx_buffer_info = vzalloc(size);
@@ -3038,6 +3046,7 @@ int igb_setup_rx_resources(struct igb_ring *rx_ring)
 		goto err;
 
 	/* Round up to nearest 4K */
+	// 申请 e1000_adv_rx_desc DMA 数组内存
 	rx_ring->size = rx_ring->count * sizeof(union e1000_adv_rx_desc);
 	rx_ring->size = ALIGN(rx_ring->size, 4096);
 
@@ -3046,6 +3055,7 @@ int igb_setup_rx_resources(struct igb_ring *rx_ring)
 	if (!rx_ring->desc)
 		goto err;
 
+	// 初始化队列成员
 	rx_ring->next_to_alloc = 0;
 	rx_ring->next_to_clean = 0;
 	rx_ring->next_to_use = 0;
@@ -5099,13 +5109,16 @@ static void igb_write_itr(struct igb_q_vector *q_vector)
 	q_vector->set_itr = 0;
 }
 
+// igb_msix_ring 函数是用作 MSIX 中断处理函数的回调函数
 static irqreturn_t igb_msix_ring(int irq, void *data)
 {
 	struct igb_q_vector *q_vector = data;
 
 	/* Write the ITR value calculated from the previous interrupt. */
+	// 根据先前的中断计算的 ITR 值写入
 	igb_write_itr(q_vector);
 
+	// 调度 NAPI，将其放入延迟处理队列中
 	napi_schedule(&q_vector->napi);
 
 	return IRQ_HANDLED;

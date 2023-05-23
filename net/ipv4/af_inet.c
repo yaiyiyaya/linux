@@ -1707,18 +1707,22 @@ static int __init inet_init(void)
 	if (!sysctl_local_reserved_ports)
 		goto out;
 
+	// 注册 TCP 协议到协议栈中,并进行相应的初始化操作
 	rc = proto_register(&tcp_prot, 1);
 	if (rc)
 		goto out_free_reserved_ports;
 
+	// 注册 UDP 协议到协议栈中,并进行相应的初始化操作
 	rc = proto_register(&udp_prot, 1);
 	if (rc)
 		goto out_unregister_tcp_proto;
 
+	// 注册  socket 协议到协议栈中,并进行相应的初始化操作
 	rc = proto_register(&raw_prot, 1);
 	if (rc)
 		goto out_unregister_udp_proto;
 
+	// 注册 icmp 协议到协议栈中,并进行相应的初始化操作
 	rc = proto_register(&ping_prot, 1);
 	if (rc)
 		goto out_unregister_raw_proto;
@@ -1727,6 +1731,7 @@ static int __init inet_init(void)
 	 *	Tell SOCKET that we are alive...
 	 */
 
+	// 用于在套接字子系统中注册一个特定的协议族。
 	(void)sock_register(&inet_family_ops);
 
 #ifdef CONFIG_SYSCTL
@@ -1739,10 +1744,14 @@ static int __init inet_init(void)
 	 *	Add all the base protocols.
 	 */
 
+	,
+	// 注册 icmp_rcv 函数
 	if (inet_add_protocol(&icmp_protocol, IPPROTO_ICMP) < 0)
 		pr_crit("%s: Cannot add ICMP protocol\n", __func__);
+	// 注册 udp_rcv 函数
 	if (inet_add_protocol(&udp_protocol, IPPROTO_UDP) < 0)
 		pr_crit("%s: Cannot add UDP protocol\n", __func__);
+	// 注册 tcp_v4_rcv 函数
 	if (inet_add_protocol(&tcp_protocol, IPPROTO_TCP) < 0)
 		pr_crit("%s: Cannot add TCP protocol\n", __func__);
 #ifdef CONFIG_IP_MULTICAST

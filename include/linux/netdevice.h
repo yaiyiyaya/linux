@@ -1782,12 +1782,13 @@ static inline int unregister_gifconf(unsigned int family)
 /*
  * Incoming packets are placed on per-cpu queues
  */
+// 用于存储软中断处理相关的数据
 struct softnet_data {
 	struct Qdisc		*output_queue;
 	struct Qdisc		**output_queue_tailp;
-	struct list_head	poll_list;
+	struct list_head	poll_list;  // poll_list 是一个链表头，用于等待驱动程序将其poll函数注册进来，以便在软中断处理期间进行轮询
 	struct sk_buff		*completion_queue;
-	struct sk_buff_head	process_queue;
+	struct sk_buff_head	process_queue;  // process_queue 是一个struct sk_buff_head 类型的结构体，表示处理队列。用于存储需要进行处理的网络数据包。
 
 	/* stats */
 	unsigned int		processed;
@@ -1806,7 +1807,7 @@ struct softnet_data {
 	unsigned int		input_queue_tail;
 #endif
 	unsigned int		dropped;
-	struct sk_buff_head	input_pkt_queue;
+	struct sk_buff_head	input_pkt_queue;  //  input_pkt_queue 是一个struct sk_buff_head 类型的结构体，表示输入数据包队列。用于存储待处理的输入数据包。
 	struct napi_struct	backlog;
 };
 

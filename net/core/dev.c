@@ -2871,10 +2871,12 @@ int netdev_budget __read_mostly = 300;
 int weight_p __read_mostly = 64;            /* old backlog weight */
 
 /* Called with irq disabled */
+// 将napi_struct结构体添加到软中断的延迟处理队列
 static inline void ____napi_schedule(struct softnet_data *sd,
 				     struct napi_struct *napi)
 {
 	list_add_tail(&napi->poll_list, &sd->poll_list);
+	// 触发NET_RX_SOFTIRQ软中断
 	__raise_softirq_irqoff(NET_RX_SOFTIRQ);
 }
 
@@ -6283,6 +6285,7 @@ static int __init net_dev_init(void)
 	 *	Initialise the packet receive queues.
 	 */
 
+	// 为每一个CPU申请一个 softnet_data 数据结构，  softnet_data 是每个CPU上的软中断数据结构， 用于处理网络接收和发送数据。
 	for_each_possible_cpu(i) {
 		struct softnet_data *sd = &per_cpu(softnet_data, i);
 
@@ -6323,8 +6326,8 @@ static int __init net_dev_init(void)
 	if (register_pernet_device(&default_device_ops))
 		goto out;
 
-	open_softirq(NET_TX_SOFTIRQ, net_tx_action);
-	open_softirq(NET_RX_SOFTIRQ, net_rx_action);
+	open_softirq(NET_TX_SOFTIRQ, net_tx_action);   // 注册软中断处理函数， net_tx_action 用于处理网络数据包的发送
+	open_softirq(NET_RX_SOFTIRQ, net_rx_action);   // 注册软中断处理函数， net_rx_action 用于处理网络数据包的接收
 
 	hotcpu_notifier(dev_cpu_callback, 0);
 	dst_init();
@@ -6333,4 +6336,5 @@ out:
 	return rc;
 }
 
+// 网络子系统初始化
 subsys_initcall(net_dev_init);

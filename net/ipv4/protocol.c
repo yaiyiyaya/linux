@@ -43,7 +43,12 @@ int inet_add_protocol(const struct net_protocol *prot, unsigned char protocol)
 		return -EINVAL;
 	}
 
-	return !cmpxchg((const struct net_protocol **)&inet_protos[protocol],
+	/*
+	inet_protos 是一个全局变量，通常是一个数组，用于存储注册的网络协议的指针。
+	每个网络协议都有一个唯一的协议号，该协议号作为索引用于访问对应协议的指针。
+	在协议注册过程中，通过 inet_add_protocol 函数将协议的指针存储到 inet_protos 数组中的相应位置，以便协议栈能够根据协议号找到对应的处理函数。
+	*/
+	return !cmpxchg((const struct net_protocol **)&inet_protos[protocol],  
 			NULL, prot) ? 0 : -1;
 }
 EXPORT_SYMBOL(inet_add_protocol);

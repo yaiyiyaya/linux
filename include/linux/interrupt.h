@@ -390,7 +390,9 @@ extern bool force_irqthreads;
 
 #ifndef __ARCH_SET_SOFTIRQ_PENDING
 #define set_softirq_pending(x) (local_softirq_pending() = (x))
-#define or_softirq_pending(x)  (local_softirq_pending() |= (x))
+// 标志位置为1。这表示将对应的软中断标志位设置为挂起状态。
+#define or_softirq_pending(x)  (local_softirq_pending() |= (x))  // 用于设置软中断挂起位图中的标志位。  local_softirq_pending() 函数用于获取当前 CPU 上的软中断挂起位图 
+
 #endif
 
 /* Some architectures might implement lazy enabling/disabling of

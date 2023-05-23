@@ -401,13 +401,13 @@ void raise_softirq(unsigned int nr)
 
 void __raise_softirq_irqoff(unsigned int nr)
 {
-	trace_softirq_raise(nr);
-	or_softirq_pending(1UL << nr);
+	trace_softirq_raise(nr);  // trace_softirq_raise 记录软中断的触发事件。这通常用于跟踪和调试软中断的执行情况。
+	or_softirq_pending(1UL << nr); // or_softirq_pending 设置相应软中断位的标志位。这将在软中断位图中将对应软中断的标志位置为1，表示该软中断已经挂起，等待被处理
 }
 
 void open_softirq(int nr, void (*action)(struct softirq_action *))
 {
-	softirq_vec[nr].action = action;
+	softirq_vec[nr].action = action;  // 软中断向量表 softirq_vec 是一个全局数组，用于存储所有软中断的信息
 }
 
 /*
@@ -760,14 +760,17 @@ static int ksoftirqd_should_run(unsigned int cpu)
 	return local_softirq_pending();
 }
 
+// 用于在指定的 CPU 上执行内核软中断处理程序
 static void run_ksoftirqd(unsigned int cpu)
 {
-	local_irq_disable();
+	local_irq_disable();  // 禁用本地中断，确保在执行软中断处理期间不会被其他中断打断。
+	// 检查当前 CPU 是否有挂起的软中断,  local_softirq_pending() 是一个宏，用于检查本地 CPU 的软中断挂起标志。
 	if (local_softirq_pending()) {
-		__do_softirq();
-		rcu_note_context_switch(cpu);
-		local_irq_enable();
-		cond_resched();
+		// 处理软中断队列中的软中断任务
+		__do_softirq(); 
+		rcu_note_context_switch(cpu); 
+		local_irq_enable(); //  启用本地中断，允许其他中断再次触发。
+		cond_resched(); // 让出 CPU 给其他任务运行
 		return;
 	}
 	local_irq_enable();
@@ -851,22 +854,26 @@ static struct notifier_block __cpuinitdata cpu_nfb = {
 	.notifier_call = cpu_callback
 };
 
+
+// softirq_threads 静态结构体，用于描述软中断线程的属性和行为
 static struct smp_hotplug_thread softirq_threads = {
-	.store			= &ksoftirqd,
-	.thread_should_run	= ksoftirqd_should_run,
-	.thread_fn		= run_ksoftirqd,
-	.thread_comm		= "ksoftirqd/%u",
+	.store			= &ksoftirqd,  // 存储软中断线程的信息
+	.thread_should_run	= ksoftirqd_should_run,  // 用于判断软中断线程是否应该运行
+	.thread_fn		= run_ksoftirqd,  // 用于执行软中断线程的主要功能
+	.thread_comm		= "ksoftirqd/%u",  // 表示软中断线程的名字
 };
 
+// spawn_ksoftirqd 仅在初始化阶段可见，用于创建和注册软中断线程
 static __init int spawn_ksoftirqd(void)
 {
-	register_cpu_notifier(&cpu_nfb);
+	register_cpu_notifier(&cpu_nfb);  // 注册一个CPU通知器，它用于在CPU状态变化时接收通知
 
-	BUG_ON(smpboot_register_percpu_thread(&softirq_threads));
+	// 用于在多CPU系统中注册一个每个CPU都运行的线程。如果注册失败，BUG_ON宏会引发一个错误。
+	BUG_ON(smpboot_register_percpu_thread(&softirq_threads));  //  注册一个软中断线程，并将之前定义的softirq_threads作为参数传递给注册函数。
 
 	return 0;
 }
-early_initcall(spawn_ksoftirqd);
+early_initcall(spawn_ksoftirqd); // 将spawn_ksoftirqd函数注册为早期初始化函数（early initcall），在内核初始化的早期阶段被调用
 
 /*
  * [ These __weak aliases are kept in a separate compilation unit, so that
