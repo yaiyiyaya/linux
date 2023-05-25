@@ -272,31 +272,41 @@ EXPORT_SYMBOL(build_ehash_secret);
 
 /*
  *	Create an inet socket.
+	创建一个inet套接字。
  */
 
 static int inet_create(struct net *net, struct socket *sock, int protocol,
 		       int kern)
 {
-	struct sock *sk;
-	struct inet_protosw *answer;
-	struct inet_sock *inet;
-	struct proto *answer_prot;
+	struct sock *sk; // struct sock类型的指针sk，用于表示套接字的内核数据结构。
+	struct inet_protosw *answer; // struct inet_protosw类型的指针answer，用于表示INET协议的协议交换结构。
+	struct inet_sock *inet; // struct inet_sock 类型的指针inet，用于表示INET协议特定的套接字数据结构。
+	struct proto *answer_prot; // struct proto类型的指针answer_prot，用于表示套接字所使用的协议的数据结构。
 	unsigned char answer_flags;
 	char answer_no_check;
 	int try_loading_module = 0;
 	int err;
 
 	if (unlikely(!inet_ehash_secret))
-		if (sock->type != SOCK_RAW && sock->type != SOCK_DGRAM)
+		if (sock->type != SOCK_RAW && sock->type != SOCK_DGRAM) // 检查套接字的类型是否既不是原始套接字(SOCK_RAW)也不是数据报套接字(SOCK_DGRAM)
 			build_ehash_secret();
 
-	sock->state = SS_UNCONNECTED;
+	sock->state = SS_UNCONNECTED; // 将套接字对象的状态设置为未连接状态。
 
 	/* Look for the requested type/protocol pair. */
 lookup_protocol:
 	err = -ESOCKTNOSUPPORT;
 	rcu_read_lock();
-	list_for_each_entry_rcu(answer, &inetsw[sock->type], list) {
+	/*
+	inetsw[sock->type] 表示通过套接字对象的 type 成员作为索引来访问 inetsw 数组中的元素。
+
+	inetsw 是一个数组或链表，其中存储了不同协议类型（protocol type）对应的 inet_protosw 结构体或其他相关信息。每个 inet_protosw 结构体代表了支持的协议类型及其相关属性。
+
+	通过 sock->type，可以获取当前套接字对象的类型（socket type），例如 SOCK_STREAM、SOCK_DGRAM、SOCK_RAW 等。然后，使用该类型作为索引，从 inetsw 中找到对应的协议信息。
+
+	这样，inetsw[sock->type] 就表示了与当前套接字对象的类型相匹配的协议信息，可以进一步访问该协议的操作函数、协议号、标志等属性，以便进行协议相关的处理和配置。
+	*/
+	list_for_each_entry_rcu(answer, &inetsw[sock->type], list) {  // 使用list_for_each_entry_rcu宏遍历指定链表中的元素，并在每次迭代中将当前元素赋值给变量answer。
 
 		err = 0;
 		/* Check the non-wild match. */
@@ -316,7 +326,7 @@ lookup_protocol:
 	}
 
 	if (unlikely(err)) {
-		if (try_loading_module < 2) {
+		if (try_loading_module < 2) { // 检查尝试加载模块的次数是否小于2。这是为了限制加载模块的尝试次数，防止无限循环。
 			rcu_read_unlock();
 			/*
 			 * Be more specific, e.g. net-pf-2-proto-132-type-1
@@ -337,13 +347,13 @@ lookup_protocol:
 			goto out_rcu_unlock;
 	}
 
-	err = -EPERM;
+	err = -EPERM; // 将错误码err设置为-EPERM，表示权限不足
 	if (sock->type == SOCK_RAW && !kern &&
-	    !ns_capable(net->user_ns, CAP_NET_RAW))
+	    !ns_capable(net->user_ns, CAP_NET_RAW))  // 检查套接字类型是否为原始套接字且不在内核空间创建，并且当前用户命名空间没有CAP_NET_RAW权限。
 		goto out_rcu_unlock;
 
-	sock->ops = answer->ops;
-	answer_prot = answer->prot;
+	sock->ops = answer->ops; // 将套接字对象的操作设置为当前遍历元素的操作。
+	answer_prot = answer->prot; // 将套接字所使用的协议设置为当前遍历元素的协议
 	answer_no_check = answer->no_check;
 	answer_flags = answer->flags;
 	rcu_read_unlock();
@@ -351,7 +361,8 @@ lookup_protocol:
 	WARN_ON(answer_prot->slab == NULL);
 
 	err = -ENOBUFS;
-	sk = sk_alloc(net, PF_INET, GFP_KERNEL, answer_prot);
+	// 分配sock 对象，并把tcp_prot 赋到sock-->sk_prot
+	sk = sk_alloc(net, PF_INET, GFP_KERNEL, answer_prot); // 分配一个套接字对象的内核数据结构。使用sk_alloc函数分配，并传递协议族PF_INET、内存分配标志GFP_KERNEL和协议对象answer_prot。
 	if (sk == NULL)
 		goto out;
 
@@ -360,7 +371,7 @@ lookup_protocol:
 	if (INET_PROTOSW_REUSE & answer_flags)
 		sk->sk_reuse = SK_CAN_REUSE;
 
-	inet = inet_sk(sk);
+	inet = inet_sk(sk); // 将套接字对象的 sk 成员强制转换为 struct inet_sock 类型，以便访问 INET 协议特定的套接字数据结构。
 	inet->is_icsk = (INET_PROTOSW_ICSK & answer_flags) != 0;
 
 	inet->nodefrag = 0;
@@ -378,6 +389,7 @@ lookup_protocol:
 
 	inet->inet_id = 0;
 
+	// 对 sock 对象进行初始化
 	sock_init_data(sock, sk);
 
 	sk->sk_destruct	   = inet_sock_destruct;

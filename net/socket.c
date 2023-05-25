@@ -383,6 +383,7 @@ struct file *sock_alloc_file(struct socket *sock, int flags, const char *dname)
 }
 EXPORT_SYMBOL(sock_alloc_file);
 
+// 用于将套接字映射到文件描述符
 static int sock_map_fd(struct socket *sock, int flags)
 {
 	struct file *newfile;
@@ -390,13 +391,13 @@ static int sock_map_fd(struct socket *sock, int flags)
 	if (unlikely(fd < 0))
 		return fd;
 
-	newfile = sock_alloc_file(sock, flags, NULL);
+	newfile = sock_alloc_file(sock, flags, NULL); // 据给定的套接字对象sock和标志位flags来分配一个文件对象
 	if (likely(!IS_ERR(newfile))) {
 		fd_install(fd, newfile);
 		return fd;
 	}
 
-	put_unused_fd(fd);
+	put_unused_fd(fd); // 将文件对象newfile安装到文件描述符fd上，以建立套接字和文件描述符之间的映射关系。
 	return PTR_ERR(newfile);
 }
 
@@ -1232,6 +1233,7 @@ call_kill:
 }
 EXPORT_SYMBOL(sock_wake_async);
 
+//  创建一个套接字。
 int __sock_create(struct net *net, int family, int type, int protocol,
 			 struct socket **res, int kern)
 {
@@ -1262,7 +1264,7 @@ int __sock_create(struct net *net, int family, int type, int protocol,
 		family = PF_PACKET;
 	}
 
-	err = security_socket_create(family, type, protocol, kern);
+	err = security_socket_create(family, type, protocol, kern);  // 用于在安全性方面对套接字的创建进行检查和处理
 	if (err)
 		return err;
 
@@ -1270,7 +1272,9 @@ int __sock_create(struct net *net, int family, int type, int protocol,
 	 *	Allocate the socket and allow the family to set things up. if
 	 *	the protocol is 0, the family is instructed to select an appropriate
 	 *	default.
+	 分配套接字，并允许家庭进行设置。 协议为0，则指示 family  选择一个适当的 默认值。  family 表示套接字的地址族
 	 */
+	// 分配 socket 对象
 	sock = sock_alloc();
 	if (!sock) {
 		net_warn_ratelimited("socket: no more sockets\n");
@@ -1292,6 +1296,7 @@ int __sock_create(struct net *net, int family, int type, int protocol,
 #endif
 
 	rcu_read_lock();
+	// 获取每个协议族的操作表
 	pf = rcu_dereference(net_families[family]);
 	err = -EAFNOSUPPORT;
 	if (!pf)
@@ -1307,6 +1312,7 @@ int __sock_create(struct net *net, int family, int type, int protocol,
 	/* Now protected by module ref count */
 	rcu_read_unlock();
 
+	// 调用知道协议族的创建函数，对于 AF_INET 对应的是 inet_create
 	err = pf->create(net, sock, protocol, kern);
 	if (err < 0)
 		goto out_module_put;
@@ -1323,7 +1329,7 @@ int __sock_create(struct net *net, int family, int type, int protocol,
 	 * module can have its refcnt decremented
 	 */
 	module_put(pf->owner);
-	err = security_socket_post_create(sock, family, type, protocol, kern);
+	err = security_socket_post_create(sock, family, type, protocol, kern); // 该函数在套接字创建后被调用，用于执行与安全性相关的后续操作，如权限验证、资源分配、安全策略应用等
 	if (err)
 		goto out_sock_release;
 	*res = sock;
@@ -1357,19 +1363,34 @@ int sock_create_kern(int family, int type, int protocol, struct socket **res)
 }
 EXPORT_SYMBOL(sock_create_kern);
 
-SYSCALL_DEFINE3(socket, int, family, int, type, int, protocol)
+
+SYSCALL_DEFINE3(socket, int, family, int, type, int, protocol) // 用于创建套接字的系统调用函数
 {
 	int retval;
 	struct socket *sock;
 	int flags;
 
 	/* Check the SOCK_* constants for consistency.  */
+	// BUILD_BUG_ON宏来进行一些编译时的检查
 	BUILD_BUG_ON(SOCK_CLOEXEC != O_CLOEXEC);
 	BUILD_BUG_ON((SOCK_MAX | SOCK_TYPE_MASK) != SOCK_TYPE_MASK);
 	BUILD_BUG_ON(SOCK_CLOEXEC & SOCK_TYPE_MASK);
 	BUILD_BUG_ON(SOCK_NONBLOCK & SOCK_TYPE_MASK);
+/*
+SOCK_TYPE_MASK是一个掩码（mask），用于从套接字类型中提取出套接字的具体类型。在这段代码中，它被用于与套接字类型进行按位与运算，以获取有效的套接字类型。
 
-	flags = type & ~SOCK_TYPE_MASK;
+套接字类型是在调用socket系统调用时传递的参数之一，用于指定套接字的通信语义。套接字类型可以是以下值之一：
+
+SOCK_STREAM：流套接字，提供可靠的、面向连接的、基于字节流的通信。在 TCP 协议中使用这种套接字类型。
+SOCK_DGRAM：数据报套接字，提供不可靠的、无连接的、固定大小的通信。在 UDP 协议中使用这种套接字类型。
+SOCK_RAW：原始套接字，允许访问底层网络协议，可以发送和接收原始的网络数据包。
+SOCK_TYPE_MASK是一个位掩码，它的值是三种套接字类型的按位或运算结果。这个掩码用于从传递给socket系统调用的套接字类型参数中提取出套接字的具体类型。
+
+例如，假设SOCK_TYPE_MASK的值为0x0F（二进制为00001111），而传递给socket系统调用的套接字类型参数为0x27（二进制为00100111），那么通过对这两个值进行按位与运算，将提取出套接字的类型为0x07（二进制为00000111），即SOCK_STREAM类型。
+*/
+
+
+	flags = type & ~SOCK_TYPE_MASK;  // 从type中提取出套接字的标志位，并保存在flags变量中
 	if (flags & ~(SOCK_CLOEXEC | SOCK_NONBLOCK))
 		return -EINVAL;
 	type &= SOCK_TYPE_MASK;
@@ -1377,11 +1398,11 @@ SYSCALL_DEFINE3(socket, int, family, int, type, int, protocol)
 	if (SOCK_NONBLOCK != O_NONBLOCK && (flags & SOCK_NONBLOCK))
 		flags = (flags & ~SOCK_NONBLOCK) | O_NONBLOCK;
 
-	retval = sock_create(family, type, protocol, &sock);
+	retval = sock_create(family, type, protocol, &sock);  // sock_create函数 创建套接字
 	if (retval < 0)
 		goto out;
 
-	retval = sock_map_fd(sock, flags & (O_CLOEXEC | O_NONBLOCK));
+	retval = sock_map_fd(sock, flags & (O_CLOEXEC | O_NONBLOCK));  // sock_map_fd函数 将套接字映射到文件描述符
 	if (retval < 0)
 		goto out_release;
 

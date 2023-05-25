@@ -2218,6 +2218,7 @@ void sk_stop_timer(struct sock *sk, struct timer_list* timer)
 }
 EXPORT_SYMBOL(sk_stop_timer);
 
+//对 sock 对象进行初始化
 void sock_init_data(struct socket *sock, struct sock *sk)
 {
 	skb_queue_head_init(&sk->sk_receive_queue);
@@ -2251,23 +2252,25 @@ void sock_init_data(struct socket *sock, struct sock *sk)
 	lockdep_set_class_and_name(&sk->sk_callback_lock,
 			af_callback_keys + sk->sk_family,
 			af_family_clock_key_strings[sk->sk_family]);
+	// 设置了套接字对象的一些属性和回调函数
+	sk->sk_state_change	=	sock_def_wakeup; // 设置套接字状态变化时的回调函数为 sock_def_wakeup
+	sk->sk_data_ready	=	sock_def_readable; // 设置套接字数据可读时的回调函数为 sock_def_readable
+	sk->sk_write_space	=	sock_def_write_space; // 设置套接字可写空间可用时的回调函数为 sock_def_write_space
+	sk->sk_error_report	=	sock_def_error_report; // 设置套接字错误报告的回调函数为 sock_def_error_report
+	sk->sk_destruct		=	sock_def_destruct; // 设置套接字销毁时的回调函数为 sock_def_destruct
 
-	sk->sk_state_change	=	sock_def_wakeup;
-	sk->sk_data_ready	=	sock_def_readable;
-	sk->sk_write_space	=	sock_def_write_space;
-	sk->sk_error_report	=	sock_def_error_report;
-	sk->sk_destruct		=	sock_def_destruct;
-
+	// 其他属性的设置
 	sk->sk_frag.page	=	NULL;
 	sk->sk_frag.offset	=	0;
 	sk->sk_peek_off		=	-1;
 
+	// 套接字的读写操作相关的设置
 	sk->sk_peer_pid 	=	NULL;
 	sk->sk_peer_cred	=	NULL;
-	sk->sk_write_pending	=	0;
-	sk->sk_rcvlowat		=	1;
-	sk->sk_rcvtimeo		=	MAX_SCHEDULE_TIMEOUT;
-	sk->sk_sndtimeo		=	MAX_SCHEDULE_TIMEOUT;
+	sk->sk_write_pending	=	0; // ：将套接字的待写数据量设置为 0
+	sk->sk_rcvlowat		=	1; // 将套接字的接收缓冲区低水位标记（receive low water mark）设置为 1。
+	sk->sk_rcvtimeo		=	MAX_SCHEDULE_TIMEOUT; // 将套接字的接收超时时间设置为 MAX_SCHEDULE_TIMEOUT
+	sk->sk_sndtimeo		=	MAX_SCHEDULE_TIMEOUT; // 将套接字的发送超时时间设置为 MAX_SCHEDULE_TIMEOUT
 
 	sk->sk_stamp = ktime_set(-1L, 0);
 
