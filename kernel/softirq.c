@@ -226,21 +226,22 @@ asmlinkage void __do_softirq(void)
 	 */
 	current->flags &= ~PF_MEMALLOC;
 
-	pending = local_softirq_pending();
-	account_irq_enter_time(current);
+	pending = local_softirq_pending(); // 获取待处理的软中断标志位
+	account_irq_enter_time(current); // 用于记录当前进程进入软中断的时间。
 
 	__local_bh_disable((unsigned long)__builtin_return_address(0),
 				SOFTIRQ_OFFSET);
 	lockdep_softirq_enter();
 
 	cpu = smp_processor_id();
+// 定义了一个标签restart，用于在处理完当前软中断后重新处理下一个软中断。
 restart:
 	/* Reset the pending bitmask before enabling irqs */
 	set_softirq_pending(0);
 
 	local_irq_enable();
 
-	h = softirq_vec;
+	h = softirq_vec; // 用于遍历软中断向量表中的每个软中断处理函数
 
 	do {
 		if (pending & 1) {
@@ -249,9 +250,9 @@ restart:
 
 			kstat_incr_softirqs_this_cpu(vec_nr);
 
-			trace_softirq_entry(vec_nr);
-			h->action(h);
-			trace_softirq_exit(vec_nr);
+			trace_softirq_entry(vec_nr);  // 用于跟踪记录软中断的进入事件。
+			h->action(h);  // 调用软中断处理函数，即执行软中断的具体处理操作
+			trace_softirq_exit(vec_nr); // 函数trace_softirq_exit()，用于跟踪记录软中断的退出事件。
 			if (unlikely(prev_count != preempt_count())) {
 				printk(KERN_ERR "huh, entered softirq %u %s %p"
 				       "with preempt_count %08x,"
@@ -280,8 +281,8 @@ restart:
 
 	lockdep_softirq_exit();
 
-	account_irq_exit_time(current);
-	__local_bh_enable(SOFTIRQ_OFFSET);
+	account_irq_exit_time(current); // 用于记录当前进程退出软中断的时间
+	__local_bh_enable(SOFTIRQ_OFFSET); 
 	tsk_restore_flags(current, old_flags, PF_MEMALLOC);
 }
 

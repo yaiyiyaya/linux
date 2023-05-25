@@ -3579,8 +3579,24 @@ static int __netif_receive_skb(struct sk_buff *skb)
 	return ret;
 }
 
+
 /**
- *	netif_receive_skb - process receive buffer from network
+ * netif_receive_skb - 处理来自网络的接收缓冲区
+ * @skb: 要处理的缓冲区
+ *
+ * netif_receive_skb() 是主要的接收数据处理函数。
+ * 它总是成功的。在处理过程中，缓冲区可能会被丢弃
+ * 用于拥堵控制或由协议层决定。
+ *
+ * 这个函数只能从softirq上下文中调用，并且要启用中断。
+ * 应该被启用。
+ *
+ * 返回值（通常被忽略）：
+ * NET_RX_SUCCESS: 没有拥堵
+ * NET_RX_DROP: 数据包被丢掉了
+ */
+/**
+ *	netif_receive_skb - process receive buffer from network 
  *	@skb: buffer to process
  *
  *	netif_receive_skb() is the main receive data processing function.
@@ -3832,7 +3848,7 @@ static gro_result_t napi_skb_finish(gro_result_t ret, struct sk_buff *skb)
 {
 	switch (ret) {
 	case GRO_NORMAL:
-		if (netif_receive_skb(skb))
+		if (netif_receive_skb(skb))  // netif_receive_skb 数据包将被送到协议栈中 
 			ret = GRO_DROP;
 		break;
 
@@ -3875,8 +3891,8 @@ static void skb_gro_reset_offset(struct sk_buff *skb)
 gro_result_t napi_gro_receive(struct napi_struct *napi, struct sk_buff *skb)
 {
 	skb_gro_reset_offset(skb);
-
-	return napi_skb_finish(dev_gro_receive(napi, skb), skb);
+	// dev_gro_receive  GRO是一种在网络接收路径中的优化技术， 用于将多个到达的小型网络数据包合并为更大的数据包，减少处理开销和提高系统性能
+	return napi_skb_finish(dev_gro_receive(napi, skb), skb); //  napi_skb_finish 用于执行接收数据包的最终处理和清理。
 }
 EXPORT_SYMBOL(napi_gro_receive);
 
@@ -4148,6 +4164,7 @@ void netif_napi_del(struct napi_struct *napi)
 }
 EXPORT_SYMBOL(netif_napi_del);
 
+// 用于处理网络接收（RX）的软中断。
 static void net_rx_action(struct softirq_action *h)
 {
 	struct softnet_data *sd = &__get_cpu_var(softnet_data);

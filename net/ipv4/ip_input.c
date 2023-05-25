@@ -244,6 +244,7 @@ static int ip_local_deliver_finish(struct sk_buff *skb)
 /*
  * 	Deliver IP Packets to the higher protocol layers.
  */
+// 负责处理目标地址为本地主机的IP数据包
 int ip_local_deliver(struct sk_buff *skb)
 {
 	/*
