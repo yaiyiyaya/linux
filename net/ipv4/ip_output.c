@@ -98,16 +98,16 @@ int __ip_local_out(struct sk_buff *skb)
 	iph->tot_len = htons(skb->len);
 	ip_send_check(iph);
 	return nf_hook(NFPROTO_IPV4, NF_INET_LOCAL_OUT, skb, NULL,
-		       skb_dst(skb)->dev, dst_output);
+		       skb_dst(skb)->dev, dst_output);  // 执行 netfilter 过滤， 如果使用 iptables 配置了一些规则，那么这里将检测是否命中
 }
 
 int ip_local_out(struct sk_buff *skb)
 {
 	int err;
 
-	err = __ip_local_out(skb);
+	err = __ip_local_out(skb); // 执行 netfilter 过滤
 	if (likely(err == 1))
-		err = dst_output(skb);
+		err = dst_output(skb); // 开始发送数据
 
 	return err;
 }
@@ -221,14 +221,16 @@ static inline int ip_skb_dst_mtu(struct sk_buff *skb)
 
 static int ip_finish_output(struct sk_buff *skb)
 {
-#if defined(CONFIG_NETFILTER) && defined(CONFIG_XFRM)
+// CONFIG_NETFILTER 是 Linux 内核中的一个配置选项，用于启用网络过滤器子系统（Netfilter）
+// CONFIG_XFRM 是 Linux 内核中的一个配置选项，用于启用 IPsec 协议的扩展安全策略（XFRM）
+#if defined(CONFIG_NETFILTER) && defined(CONFIG_XFRM)  
 	/* Policy lookup after SNAT yielded a new policy */
 	if (skb_dst(skb)->xfrm != NULL) {
 		IPCB(skb)->flags |= IPSKB_REROUTED;
 		return dst_output(skb);
 	}
 #endif
-	if (skb->len > ip_skb_dst_mtu(skb) && !skb_is_gso(skb))
+	if (skb->len > ip_skb_dst_mtu(skb) && !skb_is_gso(skb)) // 大于MTU就要进行分片了。 ip 分片
 		return ip_fragment(skb, ip_finish_output2);
 	else
 		return ip_finish_output2(skb);
@@ -297,16 +299,16 @@ int ip_mc_output(struct sk_buff *skb)
 
 int ip_output(struct sk_buff *skb)
 {
-	struct net_device *dev = skb_dst(skb)->dev;
+	struct net_device *dev = skb_dst(skb)->dev; // 获取数据包所要发送到的网络设备
 
-	IP_UPD_PO_STATS(dev_net(dev), IPSTATS_MIB_OUT, skb->len);
+	IP_UPD_PO_STATS(dev_net(dev), IPSTATS_MIB_OUT, skb->len); // 更新与指定网络设备相关的 IP 统计信息中的输出计数器
 
 	skb->dev = dev;
 	skb->protocol = htons(ETH_P_IP);
 
 	return NF_HOOK_COND(NFPROTO_IPV4, NF_INET_POST_ROUTING, skb, NULL, dev,
 			    ip_finish_output,
-			    !(IPCB(skb)->flags & IPSKB_REROUTED));
+			    !(IPCB(skb)->flags & IPSKB_REROUTED)); // 再次交给 netfilter ，完毕后回调 ip_finish_output
 }
 
 /*
@@ -344,6 +346,7 @@ int ip_queue_xmit(struct sk_buff *skb, struct flowi *fl)
 		goto packet_routed;
 
 	/* Make sure we can route this packet. */
+	// 检查 socket 中是否有缓存的路由表
 	rt = (struct rtable *)__sk_dst_check(sk, 0);
 	if (rt == NULL) {
 		__be32 daddr;
@@ -357,6 +360,8 @@ int ip_queue_xmit(struct sk_buff *skb, struct flowi *fl)
 		 * keep trying until route appears or the connection times
 		 * itself out.
 		 */
+		// 没有缓存则展开查找
+		// 查找路由项，并缓存到 socket 中
 		rt = ip_route_output_ports(sock_net(sk), fl4, sk,
 					   daddr, inet->inet_saddr,
 					   inet->inet_dport,
@@ -375,8 +380,9 @@ packet_routed:
 		goto no_route;
 
 	/* OK, we know where to send it, allocate and build IP header. */
-	skb_push(skb, sizeof(struct iphdr) + (inet_opt ? inet_opt->opt.optlen : 0));
-	skb_reset_network_header(skb);
+	skb_push(skb, sizeof(struct iphdr) + (inet_opt ? inet_opt->opt.optlen : 0)); // 将skb的数据区前移，以为ip头部预留空间。
+	skb_reset_network_header(skb); // 重置skb的网络层头部指针，确保它指向正确的位置。
+	// 设置ip头
 	iph = ip_hdr(skb);
 	*((__be16 *)iph) = htons((4 << 12) | (5 << 8) | (inet->tos & 0xff));
 	if (ip_dont_fragment(sk, &rt->dst) && !skb->local_df)
@@ -388,10 +394,10 @@ packet_routed:
 	ip_copy_addrs(iph, fl4);
 
 	/* Transport layer set skb->h.foo itself. */
-
+	// 检查 inet_opt 是否存在且选项长度 ,  如果满足条件，说明存在 IP 选项，并且需要对 IP 报文头部进行调整。
 	if (inet_opt && inet_opt->opt.optlen) {
 		iph->ihl += inet_opt->opt.optlen >> 2;
-		ip_options_build(skb, &inet_opt->opt, inet->inet_daddr, rt, 0);
+		ip_options_build(skb, &inet_opt->opt, inet->inet_daddr, rt, 0);  // 构建 IP 选项，并将选项数据存储到 skb 中。
 	}
 
 	ip_select_ident_more(iph, &rt->dst, sk,
@@ -400,6 +406,7 @@ packet_routed:
 	skb->priority = sk->sk_priority;
 	skb->mark = sk->sk_mark;
 
+	// 发送数据
 	res = ip_local_out(skb);
 	rcu_read_unlock();
 	return res;

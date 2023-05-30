@@ -616,22 +616,25 @@ EXPORT_SYMBOL(sock_tx_timestamp);
 static inline int __sock_sendmsg_nosec(struct kiocb *iocb, struct socket *sock,
 				       struct msghdr *msg, size_t size)
 {
+	// 将文件异步IO控制块转换为套接字IO控制块
 	struct sock_iocb *si = kiocb_to_siocb(iocb);
 
+	// 设置套接字IO控制块的成员变量
 	si->sock = sock;
 	si->scm = NULL;
 	si->msg = msg;
 	si->size = size;
 
-	return sock->ops->sendmsg(iocb, sock, msg, size);
+	return sock->ops->sendmsg(iocb, sock, msg, size); // 这里调用的是 sock->ops->sendmsg ，实际执行的是 inet_sendmsg ,这个函数是AF_INET 协议族提供的通用发送函数
 }
 
+//
 static inline int __sock_sendmsg(struct kiocb *iocb, struct socket *sock,
 				 struct msghdr *msg, size_t size)
 {
-	int err = security_socket_sendmsg(sock, msg, size);
+	int err = security_socket_sendmsg(sock, msg, size); // 调用security_socket_sendmsg函数进行安全检查，返回错误码
 
-	return err ?: __sock_sendmsg_nosec(iocb, sock, msg, size);
+	return err ?: __sock_sendmsg_nosec(iocb, sock, msg, size); // 调用__sock_sendmsg_nosec函数进行实际的发送操作
 }
 
 int sock_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
@@ -1775,41 +1778,48 @@ SYSCALL_DEFINE6(sendto, int, fd, void __user *, buff, size_t, len,
 		unsigned int, flags, struct sockaddr __user *, addr,
 		int, addr_len)
 {
-	struct socket *sock;
-	struct sockaddr_storage address;
+	struct socket *sock; // 
+	struct sockaddr_storage address;  // 目标地址结构体
 	int err;
-	struct msghdr msg;
-	struct iovec iov;
-	int fput_needed;
+	struct msghdr msg; // 消息头结构体
+	struct iovec iov; // 数据块结构体
+	int fput_needed; // 是否需要释放文件描述符
 
 	if (len > INT_MAX)
 		len = INT_MAX;
-	sock = sockfd_lookup_light(fd, &err, &fput_needed);
+	sock = sockfd_lookup_light(fd, &err, &fput_needed); // 通过文件描述符查找套接字
 	if (!sock)
 		goto out;
 
+	// 设置数据块结构体
 	iov.iov_base = buff;
 	iov.iov_len = len;
+
+	// 设置消息头结构体
 	msg.msg_name = NULL;
 	msg.msg_iov = &iov;
 	msg.msg_iovlen = 1;
 	msg.msg_control = NULL;
 	msg.msg_controllen = 0;
 	msg.msg_namelen = 0;
-	if (addr) {
+
+
+	if (addr) { // 如果目标地址非空，将用户空间的地址拷贝到内核空间的address结构体
 		err = move_addr_to_kernel(addr, addr_len, &address);
 		if (err < 0)
 			goto out_put;
 		msg.msg_name = (struct sockaddr *)&address;
 		msg.msg_namelen = addr_len;
 	}
-	if (sock->file->f_flags & O_NONBLOCK)
+	if (sock->file->f_flags & O_NONBLOCK) // 如果套接字的文件标志中包含O_NONBLOCK，将flags与MSG_DONTWAIT进行按位或运算
 		flags |= MSG_DONTWAIT;
-	msg.msg_flags = flags;
+	msg.msg_flags = flags; // 设置消息头的其他标志
+
+	//  sock_sendmsg 函数发送消息
 	err = sock_sendmsg(sock, &msg, len);
 
 out_put:
-	fput_light(sock->file, fput_needed);
+	fput_light(sock->file, fput_needed); // 释放套接字的文件描述符
 out:
 	return err;
 }

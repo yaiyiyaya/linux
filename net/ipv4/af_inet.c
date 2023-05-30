@@ -772,16 +772,17 @@ EXPORT_SYMBOL(inet_getname);
 int inet_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		 size_t size)
 {
-	struct sock *sk = sock->sk;
+	struct sock *sk = sock->sk; // 获取套接字的协议控制块
 
-	sock_rps_record_flow(sk);
+	sock_rps_record_flow(sk); // 记录套接字的流记录
 
 	/* We may need to bind the socket. */
+	// 如果套接字未绑定地址，且协议不禁用自动绑定，则自动绑定套接字
 	if (!inet_sk(sk)->inet_num && !sk->sk_prot->no_autobind &&
 	    inet_autobind(sk))
 		return -EAGAIN;
 
-	return sk->sk_prot->sendmsg(iocb, sk, msg, size);
+	return sk->sk_prot->sendmsg(iocb, sk, msg, size); // 调用协议控制块的sendmsg函数进行发送操作 , 对于TCP 下的socket来说，sk->sk_prot->sendmsg 指向的是 tcp_sendmsg
 }
 EXPORT_SYMBOL(inet_sendmsg);
 

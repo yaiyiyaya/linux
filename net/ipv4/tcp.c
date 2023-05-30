@@ -1013,6 +1013,7 @@ static int tcp_sendmsg_fastopen(struct sock *sk, struct msghdr *msg, int *size)
 	return err;
 }
 
+// TCP层用于发送消息
 int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		size_t size)
 {
@@ -1026,6 +1027,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 
 	lock_sock(sk);
 
+	// 如果消息标志包含MSG_FASTOPEN，则调用tcp_sendmsg_fastopen函数进行TCP Fast Open的处理
 	flags = msg->msg_flags;
 	if (flags & MSG_FASTOPEN) {
 		err = tcp_sendmsg_fastopen(sk, msg, &copied_syn);
@@ -1036,12 +1038,13 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		offset = copied_syn;
 	}
 
-	timeo = sock_sndtimeo(sk, flags & MSG_DONTWAIT);
+	timeo = sock_sndtimeo(sk, flags & MSG_DONTWAIT); // 获取发送超时时间和套接字状态，并进行相应的处理。
 
 	/* Wait for a connection to finish. One exception is TCP Fast Open
 	 * (passive side) where data is allowed to be sent before a connection
 	 * is fully established.
 	 */
+	// 如果套接字状态不是TCPF_ESTABLISHED或TCPF_CLOSE_WAIT，并且不是TCP Fast Open的被动侧，则等待连接完成
 	if (((1 << sk->sk_state) & ~(TCPF_ESTABLISHED | TCPF_CLOSE_WAIT)) &&
 	    !tcp_passive_fastopen(sk)) {
 		if ((err = sk_stream_wait_connect(sk, &timeo)) != 0)
@@ -1062,24 +1065,27 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	}
 
 	/* This should be in poll */
-	clear_bit(SOCK_ASYNC_NOSPACE, &sk->sk_socket->flags);
+	clear_bit(SOCK_ASYNC_NOSPACE, &sk->sk_socket->flags); // 清除套接字的 SOCK_ASYNC_NOSPACE 标志。
 
+	// 获取当前的MSS和发送目标大小
 	mss_now = tcp_send_mss(sk, &size_goal, flags);
 
 	/* Ok commence sending. */
-	iovlen = msg->msg_iovlen;
-	iov = msg->msg_iov;
-	copied = 0;
+	// 获取用户传递过来的数据和标志
+	iovlen = msg->msg_iovlen; // 用户数据地址
+	iov = msg->msg_iov; // 数据块数为1  msg->msg_iov 存储的是用户态内存要发送的数据额buffer
+	copied = 0; // 各种标志
 
 	err = -EPIPE;
-	if (sk->sk_err || (sk->sk_shutdown & SEND_SHUTDOWN))
+	if (sk->sk_err || (sk->sk_shutdown & SEND_SHUTDOWN)) // 检查套接字错误或是否已关闭发送
 		goto out_err;
 
 	sg = !!(sk->sk_route_caps & NETIF_F_SG);
 
 	while (--iovlen >= 0) {
 		size_t seglen = iov->iov_len;
-		unsigned char __user *from = iov->iov_base;
+		// 待发送的数据块的地址
+		unsigned char __user *from = iov->iov_base; // 定义并初始化指针from，指向当前iov的数据起始位置。
 
 		iov++;
 		if (unlikely(offset > 0)) {  /* Skip bytes copied in SYN */
@@ -1096,22 +1102,24 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			int copy = 0;
 			int max = size_goal;
 
-			skb = tcp_write_queue_tail(sk);
+			skb = tcp_write_queue_tail(sk); // 获取发送队列
 			if (tcp_send_head(sk)) {
 				if (skb->ip_summed == CHECKSUM_NONE)
 					max = mss_now;
 				copy = max - skb->len;
 			}
 
-			if (copy <= 0) {
+			// 需要申请新的skb
+			if (copy <= 0) {  //  如果copy小于等于0，表示当前skb无法容纳更多数据，需要分配新的数据段
 new_segment:
 				/* Allocate new segment. If the interface is SG,
 				 * allocate skb fitting to single page.
 				 */
-				if (!sk_stream_memory_free(sk))
+				if (!sk_stream_memory_free(sk)) // 如果内存不足以分配新的数据段，则等待直到有足够的内存可用。通过调用sk_stream_memory_free()检查是否有足够的内存。
 					goto wait_for_sndbuf;
 
-				skb = sk_stream_alloc_skb(sk,
+				// 申请skb,并添加到发送队列的尾部
+				skb = sk_stream_alloc_skb(sk,  // 分配新的skb用于存储数据。根据接口是否支持Scatter/Gather（SG），选择适当的大小进行分配。
 							  select_size(sk, sg),
 							  sk->sk_allocation);
 				if (!skb)
@@ -1120,22 +1128,28 @@ new_segment:
 				/*
 				 * Check whether we can use HW checksum.
 				 */
+				// 检查是否可以使用硬件校验和。
 				if (sk->sk_route_caps & NETIF_F_ALL_CSUM)
 					skb->ip_summed = CHECKSUM_PARTIAL;
 
-				skb_entail(sk, skb);
-				copy = size_goal;
-				max = size_goal;
+				skb_entail(sk, skb); // 把skb 挂到socket 的发送队列上
+				copy = size_goal; // 更新copy的值为本次循环迭代中要复制的字节数。
+				max = size_goal; // 更新max的值为本次循环迭代中的最大复制字节数。
 			}
 
 			/* Try to append data to the end of skb. */
-			if (copy > seglen)
+			if (copy > seglen) // 如果要复制的字节数copy大于剩余的seglen，则将copy的值更新为剩余的seglen
 				copy = seglen;
 
 			/* Where to copy to? */
-			if (skb_availroom(skb) > 0) {
+			// skb 中有足够的空间
+			if (skb_availroom(skb) > 0) { // 如果skb的头部还有空间可以容纳数据，则将数据复制到skb的头部
 				/* We have some space in skb head. Superb! */
 				copy = min_t(int, copy, skb_availroom(skb));
+				/*
+					将用户空间的数据拷贝到内核空间，同时计算校验和
+					from 是用户空间的数据地址
+				*/
 				err = skb_add_data_nocache(sk, skb, from, copy);
 				if (err)
 					goto do_fault;
@@ -1194,11 +1208,12 @@ new_segment:
 			if (skb->len < max || (flags & MSG_OOB) || unlikely(tp->repair))
 				continue;
 
-			if (forced_push(tp)) {
-				tcp_mark_push(tp, skb);
-				__tcp_push_pending_frames(sk, mss_now, TCP_NAGLE_PUSH);
-			} else if (skb == tcp_send_head(sk))
-				tcp_push_one(sk, mss_now);
+			// 发送判断
+			if (forced_push(tp)) {  // 如果需要强制推送数据，则执行以下操作
+				tcp_mark_push(tp, skb); // 将数据段标记为需要立即发送（PUSH）
+				__tcp_push_pending_frames(sk, mss_now, TCP_NAGLE_PUSH);  // 调用 __tcp_push_pending_frames() 函数，将所有待发送的数据段立即发送出去，以确保数据的及时传输。
+			} else if (skb == tcp_send_head(sk)) // 如果当前的skb是发送队列的头部（即该数据段是队列中最早发送但还未确认的数据段），则执行以下操作：
+				tcp_push_one(sk, mss_now); // 调用tcp_push_one()函数，将当前的skb数据段推送出去，以确保数据的及时传输。
 			continue;
 
 wait_for_sndbuf:
