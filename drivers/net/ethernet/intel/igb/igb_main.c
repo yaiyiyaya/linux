@@ -2745,6 +2745,7 @@ static int igb_sw_init(struct igb_adapter *adapter)
  *  handler is registered with the OS, the watchdog timer is started,
  *  and the stack is notified that the interface is ready.
  **/
+// 分配和初始化RingBuffer
 static int __igb_open(struct net_device *netdev, bool resuming)
 {
 	struct igb_adapter *adapter = netdev_priv(netdev);
@@ -2765,12 +2766,12 @@ static int __igb_open(struct net_device *netdev, bool resuming)
 	netif_carrier_off(netdev);
 
 	/* allocate transmit descriptors */
-	err = igb_setup_all_tx_resources(adapter);
+	err = igb_setup_all_tx_resources(adapter);  // 分配传输描述符数组
 	if (err)
 		goto err_setup_tx;
 
 	/* allocate receive descriptors */
-	err = igb_setup_all_rx_resources(adapter);
+	err = igb_setup_all_rx_resources(adapter);   // 分配接收描述符数组
 	if (err)
 		goto err_setup_rx;
 
@@ -2816,7 +2817,7 @@ static int __igb_open(struct net_device *netdev, bool resuming)
 		wr32(E1000_CTRL_EXT, reg_data);
 	}
 
-	netif_tx_start_all_queues(netdev);
+	netif_tx_start_all_queues(netdev); // 开启全部队列
 
 	if (!resuming)
 		pm_runtime_put(&pdev->dev);
@@ -3033,6 +3034,13 @@ static void igb_configure_tx(struct igb_adapter *adapter)
  *
  *  Returns 0 on success, negative on failure
  **/
+/*
+	RingBuffer 的内部不仅仅是一个环形队列数组：
+		igb_rx_buffer： 这个数组是内核使用的，通过vzalloc申请
+		e1000_adv_rx_desc： 这个数据是网卡硬件使用的，通过dma_alloc_coherent分配
+	
+	这两个环形数组中相同的位置的指针都将指向同一个 skb, 这样内核和硬件就能共同访问同样的数据了， 内核往skb 写数据， 网卡硬件负责发送
+*/
 int igb_setup_rx_resources(struct igb_ring *rx_ring)
 {
 	struct device *dev = rx_ring->dev;
@@ -3040,8 +3048,8 @@ int igb_setup_rx_resources(struct igb_ring *rx_ring)
 
 	// 申请 igb_rx_buffer 数组内存
 	size = sizeof(struct igb_rx_buffer) * rx_ring->count;
-
 	rx_ring->rx_buffer_info = vzalloc(size);
+
 	if (!rx_ring->rx_buffer_info)
 		goto err;
 
@@ -3049,9 +3057,9 @@ int igb_setup_rx_resources(struct igb_ring *rx_ring)
 	// 申请 e1000_adv_rx_desc DMA 数组内存
 	rx_ring->size = rx_ring->count * sizeof(union e1000_adv_rx_desc);
 	rx_ring->size = ALIGN(rx_ring->size, 4096);
-
 	rx_ring->desc = dma_alloc_coherent(dev, rx_ring->size,
 					   &rx_ring->dma, GFP_KERNEL);
+
 	if (!rx_ring->desc)
 		goto err;
 
@@ -3081,8 +3089,8 @@ static int igb_setup_all_rx_resources(struct igb_adapter *adapter)
 	struct pci_dev *pdev = adapter->pdev;
 	int i, err = 0;
 
-	for (i = 0; i < adapter->num_rx_queues; i++) {
-		err = igb_setup_rx_resources(adapter->rx_ring[i]);
+	for (i = 0; i < adapter->num_rx_queues; i++) {  // 遍历循环，有几个队列就构造几个 RingBuffer
+		err = igb_setup_rx_resources(adapter->rx_ring[i]);  // 构建  RingBuffer 实际上是函数 igb_setup_rx_resources 中完成的
 		if (err) {
 			dev_err(&pdev->dev,
 				"Allocation for Rx Queue %u failed\n", i);

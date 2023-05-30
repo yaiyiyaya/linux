@@ -2160,7 +2160,8 @@ static void sock_def_readable(struct sock *sk, int len)
 
 	rcu_read_lock();
 	wq = rcu_dereference(sk->sk_wq);
-	if (wq_has_sleeper(wq))
+	if (wq_has_sleeper(wq)) // 判断等待队列不为空
+		// 执行等待队列项上的回调函数
 		wake_up_interruptible_sync_poll(&wq->wait, POLLIN | POLLPRI |
 						POLLRDNORM | POLLRDBAND);
 	sk_wake_async(sk, SOCK_WAKE_WAITD, POLL_IN);
