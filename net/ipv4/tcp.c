@@ -1013,13 +1013,16 @@ static int tcp_sendmsg_fastopen(struct sock *sk, struct msghdr *msg, int *size)
 	return err;
 }
 
-// TCP层用于发送消息
-int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
+/*
+	1. 就是找到一个空闲的内存空间，将用户要写入的数据，拷贝到 struct sk_buff 的管辖范围内
+	2. 发送 struct sk_buff。
+*/
+int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,  // msg 是用户要写入的数据，这个数据要拷贝到内核协议栈里面去发送
 		size_t size)
 {
 	struct iovec *iov;
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct sk_buff *skb;
+	struct tcp_sock *tp = tcp_sk(sk);  // 将 sock 结构转换为 struct tcp_sock，这个是维护 TCP 连接状态的重要数据结构
+	struct sk_buff *skb; // 网络包的数据
 	int iovlen, flags, err, copied = 0;
 	int mss_now = 0, size_goal, copied_syn = 0, offset = 0;
 	bool sg;
@@ -1102,15 +1105,23 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			int copy = 0;
 			int max = size_goal;
 
+			/*
+				tcp_write_queue_tail 从 TCP 写入队列 sk_write_queue 中拿出最后一个 struct sk_buff，在这个写入队列中排满了要发送的 struct sk_buff，为什么要拿最后一个呢？
+			这里面只有最后一个，可能会因为上次用户给的数据太少，而没有填满。
+			*/
 			skb = tcp_write_queue_tail(sk); // 获取发送队列
 			if (tcp_send_head(sk)) {
 				if (skb->ip_summed == CHECKSUM_NONE)
-					max = mss_now;
-				copy = max - skb->len;
+					max = mss_now; 
+				copy = max - skb->len; // skb->len 是当前已经占用的 skb 的数据长度, max 是 struct sk_buff 的最大数据长度; 
 			}
 
 			// 需要申请新的skb
-			if (copy <= 0) {  //  如果copy小于等于0，表示当前skb无法容纳更多数据，需要分配新的数据段
+			/*
+				struct sk_buff 是存储网络包的重要的数据结构，在应用层数据包叫 data，在 TCP 层我们称为 segment，
+			在 IP 层我们叫 packet，在数据链路层称为 frame。在 struct sk_buff，首先是一个链表，将 struct sk_buff 结构串起来。
+			*/
+			if (copy <= 0) {  //   如果 copy 小于 0，说明最后一个 struct sk_buff 已经没地方存放了，需要调用 sk_stream_alloc_skb，重新分配 struct sk_buff，然后调用 skb_entail，将新分配的 sk_buff 放到队列尾部。
 new_segment:
 				/* Allocate new segment. If the interface is SG,
 				 * allocate skb fitting to single page.
@@ -1119,6 +1130,10 @@ new_segment:
 					goto wait_for_sndbuf;
 
 				// 申请skb,并添加到发送队列的尾部
+				/*
+					分散聚合（Scatter/Gather）I/O，顾名思义，就是 IP 层没必要通过内存拷贝进行聚合，让散的数据零散的放在原处，在设备层进行聚合。
+					使用这种模式，网络包的数据就不会放在连续的数据区域，不能保证数据的连续性
+				*/
 				skb = sk_stream_alloc_skb(sk,  // 分配新的skb用于存储数据。根据接口是否支持Scatter/Gather（SG），选择适当的大小进行分配。
 							  select_size(sk, sg),
 							  sk->sk_allocation);
@@ -1143,6 +1158,7 @@ new_segment:
 
 			/* Where to copy to? */
 			// skb 中有足够的空间
+			// 4. 保证数据在内存空间的连续性
 			if (skb_availroom(skb) > 0) { // 如果skb的头部还有空间可以容纳数据，则将数据复制到skb的头部
 				/* We have some space in skb head. Superb! */
 				copy = min_t(int, copy, skb_availroom(skb));
@@ -1150,7 +1166,7 @@ new_segment:
 					将用户空间的数据拷贝到内核空间，同时计算校验和
 					from 是用户空间的数据地址
 				*/
-				err = skb_add_data_nocache(sk, skb, from, copy);
+				err = skb_add_data_nocache(sk, skb, from, copy); // //skb_add_data_nocache 将数据拷贝到连续的数据区域
 				if (err)
 					goto do_fault;
 			} else {
@@ -1175,7 +1191,7 @@ new_segment:
 				if (!sk_wmem_schedule(sk, copy))
 					goto wait_for_memory;
 
-				err = skb_copy_to_page_nocache(sk, from, skb,
+				err = skb_copy_to_page_nocache(sk, from, skb, // skb_copy_to_page_nocache 将数据拷贝到 struct skb_shared_info 结构指向的不需要连续的页面区域。
 							       pfrag->page,
 							       pfrag->offset,
 							       copy);
@@ -1211,8 +1227,8 @@ new_segment:
 			// 发送判断
 			if (forced_push(tp)) {  // 如果需要强制推送数据，则执行以下操作
 				tcp_mark_push(tp, skb); // 将数据段标记为需要立即发送（PUSH）
-				__tcp_push_pending_frames(sk, mss_now, TCP_NAGLE_PUSH);  // 调用 __tcp_push_pending_frames() 函数，将所有待发送的数据段立即发送出去，以确保数据的及时传输。
-			} else if (skb == tcp_send_head(sk)) // 如果当前的skb是发送队列的头部（即该数据段是队列中最早发送但还未确认的数据段），则执行以下操作：
+				__tcp_push_pending_frames(sk, mss_now, TCP_NAGLE_PUSH);  //  积累的数据报数目太多了，因而我们需要通过调用 __tcp_push_pending_frames 发送网络包 ,将所有待发送的数据段立即发送出去，以确保数据的及时传输。
+			} else if (skb == tcp_send_head(sk)) // 这是第一个网络包，需要马上发送
 				tcp_push_one(sk, mss_now); // 调用tcp_push_one()函数，将当前的skb数据段推送出去，以确保数据的及时传输。
 			continue;
 

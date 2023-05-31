@@ -825,7 +825,10 @@ void tcp_wfree(struct sk_buff *skb)
  * We are working here with either a clone of the original
  * SKB, or a fresh unique copy made by the retransmit engine.
  */
-// 
+/*
+	1. 填充 TCP 头
+	2. 调用 icsk_af_ops 的 queue_xmit 方法，icsk_af_ops 指向 ipv4_specific，也即调用的是 ip_queue_xmit 函数。
+*/
 static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			    gfp_t gfp_mask)
 {
@@ -1836,6 +1839,7 @@ static int tcp_mtu_probe(struct sock *sk)
  * 但由于SWS或其他问题现在不能发送任何东西。
  */
 // 处理传输层的拥塞控制，滑动窗口相关的工作
+// 用来处理发送队列，只要队列不空，就会发送
 static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			   int push_one, gfp_t gfp)
 {
@@ -1877,6 +1881,7 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		if (unlikely(tp->repair) && tp->repair_queue == TCP_SEND_QUEUE) // 判断是否需要执行网络修复（repair）操作
 			goto repair; /* Skip network transmission */
 
+		// tcp_cwnd_test 会将当前的 snd_cwnd，减去已经在窗口里面尚未发送完毕的网络包，那就是剩下的窗口大小 cwnd_quota，也即就能发送这么多了。
 		cwnd_quota = tcp_cwnd_test(tp, skb); // 调用tcp_cwnd_test函数来检查拥塞窗口（Congestion Window）是否允许发送数据包。
 		if (!cwnd_quota) { // 检查用于确定是否满足发送数据包的拥塞窗口配额 , 如果cwnd_quota为零，表示拥塞窗口不允许发送数据包
 			if (push_one == 2) // 如果push_one等于2，表示需要强制发送一个丢失探测包（loss probe packet），此时将cwnd_quota设置为1。
