@@ -2106,7 +2106,7 @@ static inline void __netif_reschedule(struct Qdisc *q)
 	q->next_sched = NULL;
 	*sd->output_queue_tailp = q;
 	sd->output_queue_tailp = &q->next_sched;
-	raise_softirq_irqoff(NET_TX_SOFTIRQ);
+	raise_softirq_irqoff(NET_TX_SOFTIRQ); // 触发软中断， 软中断为 NET_TX_SOFTIRQ。  NET_TX_SOFTIRQ 的处理函数是 net_tx_action，用于发送网络包
 	local_irq_restore(flags);
 }
 
@@ -2513,7 +2513,7 @@ static inline int skb_needs_linearize(struct sk_buff *skb,
 int dev_hard_start_xmit(struct sk_buff *skb, struct net_device *dev,
 			struct netdev_queue *txq)
 {
-	const struct net_device_ops *ops = dev->netdev_ops;
+	const struct net_device_ops *ops = dev->netdev_ops; // 获取设备的回调函数集合 ops
 	int rc = NETDEV_TX_OK;
 	unsigned int skb_len;
 
@@ -2527,7 +2527,7 @@ int dev_hard_start_xmit(struct sk_buff *skb, struct net_device *dev,
 		if (dev->priv_flags & IFF_XMIT_DST_RELEASE)
 			skb_dst_drop(skb);
 
-		features = netif_skb_features(skb);
+		features = netif_skb_features(skb); // 获取设备支持的功能列表
 
 		if (vlan_tx_tag_present(skb) &&
 		    !vlan_hw_offload_capable(features, skb->vlan_proto)) {
@@ -2576,8 +2576,8 @@ int dev_hard_start_xmit(struct sk_buff *skb, struct net_device *dev,
 		if (!list_empty(&ptype_all))
 			dev_queue_xmit_nit(skb, dev);
 
-		skb_len = skb->len;
-		rc = ops->ndo_start_xmit(skb, dev);
+		skb_len = skb->len; 
+		rc = ops->ndo_start_xmit(skb, dev); // 调用驱动的 ops 里的回调函数 ndo_start_xmit 将数据包传给网卡设备
 		trace_net_dev_xmit(skb, rc, dev, skb_len);
 		if (rc == NETDEV_TX_OK)
 			txq_trans_update(txq);
@@ -2651,6 +2651,11 @@ static void qdisc_pkt_len_init(struct sk_buff *skb)
 	}
 }
 
+/*
+	每个块设备都有队列，用于将内核的数据放到队列里面，然后设备驱动从队列里面取出后，将数据根据具体设备的特性发送给设备
+	网络设备也是类似的，对于发送来说，有一个发送队列 struct netdev_queue *txq
+	struct Qdisc qdisc 全称是 queueing discipline，中文叫排队规则。内核如果需要通过某个网络接口发送数据包，都需要按照为这个接口配置的 qdisc（排队规则）把数据包加入队列。
+*/
 static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 				 struct net_device *dev,
 				 struct netdev_queue *txq)
@@ -2675,7 +2680,7 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 	if (unlikely(test_bit(__QDISC_STATE_DEACTIVATED, &q->state))) {
 		kfree_skb(skb);
 		rc = NET_XMIT_DROP;
-	} else if ((q->flags & TCQ_F_CAN_BYPASS) && !qdisc_qlen(q) &&
+	} else if ((q->flags & TCQ_F_CAN_BYPASS) && !qdisc_qlen(q) && // 如果可以绕开排队系统
 		   qdisc_run_begin(q)) {
 		/*
 		 * This is a work-conserving queue; there are no old skbs
@@ -2697,15 +2702,15 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 			qdisc_run_end(q);
 
 		rc = NET_XMIT_SUCCESS;
-	} else {
+	} else { // 正常排队
 		skb_dst_force(skb);
-		rc = q->enqueue(skb, q) & NET_XMIT_MASK;
+		rc = q->enqueue(skb, q) & NET_XMIT_MASK; // 入队
 		if (qdisc_run_begin(q)) {
 			if (unlikely(contended)) {
 				spin_unlock(&q->busylock);
 				contended = false;
 			}
-			__qdisc_run(q);
+			__qdisc_run(q);  // 调用 __qdisc_run 处理队列中的数据。
 		}
 	}
 	spin_unlock(root_lock);
@@ -2791,14 +2796,14 @@ int dev_queue_xmit(struct sk_buff *skb)
 
 	skb_update_prio(skb);
 
-	txq = netdev_pick_tx(dev, skb);
-	q = rcu_dereference_bh(txq->qdisc);
+	txq = netdev_pick_tx(dev, skb); // 选择发送队列
+	q = rcu_dereference_bh(txq->qdisc); // 获取与此队列关联的排队规则
 
 #ifdef CONFIG_NET_CLS_ACT
 	skb->tc_verd = SET_TC_AT(skb->tc_verd, AT_EGRESS);
 #endif
 	trace_net_dev_queue(skb);
-	if (q->enqueue) {
+	if (q->enqueue) { // 如果有队列，则调用 __dev_xmit_skb 继续处理数据
 		rc = __dev_xmit_skb(skb, q, dev, txq);
 		goto out;
 	}
@@ -2877,7 +2882,7 @@ static inline void ____napi_schedule(struct softnet_data *sd,
 {
 	list_add_tail(&napi->poll_list, &sd->poll_list);
 	// 触发NET_RX_SOFTIRQ软中断
-	__raise_softirq_irqoff(NET_RX_SOFTIRQ);
+	__raise_softirq_irqoff(NET_RX_SOFTIRQ); // 触发硬中断， 这个比较有意思的是， 无论是接受数据，还是发送数据， 软中断都是 NET_RX_SOFTIRQ， 故 NET_RX_SOFTIRQ 要比 NET_TX_SOFTIRQ 大的多
 }
 
 #ifdef CONFIG_RPS
@@ -3255,7 +3260,7 @@ static void net_tx_action(struct softirq_action *h)
 				smp_mb__before_clear_bit();
 				clear_bit(__QDISC_STATE_SCHED,
 					  &q->state);
-				qdisc_run(q);
+				qdisc_run(q); // 调用了 qdisc_run，还是会调用 __qdisc_run，然后调用 qdisc_restart 发送网络包。
 				spin_unlock(root_lock);
 			} else {
 				if (!test_bit(__QDISC_STATE_DEACTIVATED,

@@ -4477,6 +4477,7 @@ static void igb_tx_olinfo_status(struct igb_ring *tx_ring,
 	tx_desc->read.olinfo_status = cpu_to_le32(olinfo_status);
 }
 
+// 从网卡的发送队列RingBuffer中取出一个元素，并将skb 挂载元素中，， igb_tx_map 将skb 数据映射到网卡可访问的内存DMA区域
 static void igb_tx_map(struct igb_ring *tx_ring,
 		       struct igb_tx_buffer *first,
 		       const u8 hdr_len)
@@ -4491,17 +4492,18 @@ static void igb_tx_map(struct igb_ring *tx_ring,
 	u32 cmd_type = igb_tx_cmd_type(skb, tx_flags);
 	u16 i = tx_ring->next_to_use;
 
-	tx_desc = IGB_TX_DESC(tx_ring, i);
+	tx_desc = IGB_TX_DESC(tx_ring, i); // 获取下一个可用描述符指针
 
 	igb_tx_olinfo_status(tx_ring, tx_desc, tx_flags, skb->len - hdr_len);
 
 	size = skb_headlen(skb);
 	data_len = skb->data_len;
 
-	dma = dma_map_single(tx_ring->dev, skb->data, size, DMA_TO_DEVICE);
+	dma = dma_map_single(tx_ring->dev, skb->data, size, DMA_TO_DEVICE); // 为 skb->data 构造内存映射，以允许设备通过DMA 从RAM中读取数据
 
 	tx_buffer = first;
 
+	// 遍历该数据包的所有分片，为skb的每个分片生成有效映射
 	for (frag = &skb_shinfo(skb)->frags[0];; frag++) {
 		if (dma_mapping_error(tx_ring->dev, dma))
 			goto dma_error;
@@ -4553,6 +4555,7 @@ static void igb_tx_map(struct igb_ring *tx_ring,
 	}
 
 	/* write last descriptor with RS and EOP bits */
+	// 设置最后一个 desciptor
 	cmd_type |= size | IGB_TXD_DCMD;
 	tx_desc->read.cmd_type_len = cpu_to_le32(cmd_type);
 
@@ -4670,6 +4673,7 @@ netdev_tx_t igb_xmit_frame_ring(struct sk_buff *skb,
 	}
 
 	/* record the location of the first descriptor for this packet */
+	// 获取TX Queue 中下一个可用缓冲区信息
 	first = &tx_ring->tx_buffer_info[tx_ring->next_to_use];
 	first->skb = skb;
 	first->bytecount = skb->len;
@@ -4706,7 +4710,7 @@ netdev_tx_t igb_xmit_frame_ring(struct sk_buff *skb,
 	else if (!tso)
 		igb_tx_csum(tx_ring, first);
 
-	igb_tx_map(tx_ring, first, hdr_len);
+	igb_tx_map(tx_ring, first, hdr_len); // igb_tx_map 函数准备给设备发送的数据
 
 	/* Make sure there is space in the ring for the next send. */
 	igb_maybe_stop_tx(tx_ring, DESC_NEEDED);
@@ -4730,6 +4734,7 @@ static inline struct igb_ring *igb_tx_queue_mapping(struct igb_adapter *adapter,
 	return adapter->tx_ring[r_idx];
 }
 
+// 得到这个网卡对应的适配器，然后将其放入硬件网卡的队列中。
 static netdev_tx_t igb_xmit_frame(struct sk_buff *skb,
 				  struct net_device *netdev)
 {

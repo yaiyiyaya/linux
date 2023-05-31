@@ -121,7 +121,7 @@ int sch_direct_xmit(struct sk_buff *skb, struct Qdisc *q,
 
 	HARD_TX_LOCK(dev, txq, smp_processor_id());
 	if (!netif_xmit_frozen_or_stopped(txq))
-		ret = dev_hard_start_xmit(skb, dev, txq);
+		ret = dev_hard_start_xmit(skb, dev, txq); // 调用 dev_hard_start_xmit 进行发送，如果发送不成功，会返回 NETDEV_TX_BUSY。这说明网络卡很忙，于是就调用 dev_requeue_skb，重新放入队列。
 
 	HARD_TX_UNLOCK(dev, txq);
 
@@ -175,7 +175,7 @@ static inline int qdisc_restart(struct Qdisc *q)
 	struct sk_buff *skb;
 
 	/* Dequeue packet */
-	skb = dequeue_skb(q);
+	skb = dequeue_skb(q); // 从qdsc 中取出要发送的数据
 	if (unlikely(!skb))
 		return 0;
 	WARN_ON_ONCE(skb_dst_is_noref(skb));
@@ -183,18 +183,23 @@ static inline int qdisc_restart(struct Qdisc *q)
 	dev = qdisc_dev(q);
 	txq = netdev_get_tx_queue(dev, skb_get_queue_mapping(skb));
 
-	return sch_direct_xmit(skb, q, dev, txq, root_lock);
+	return sch_direct_xmit(skb, q, dev, txq, root_lock); // 调用 sch_direct_xmit 进行发送
 }
 
 void __qdisc_run(struct Qdisc *q)
 {
 	int quota = weight_p;
 
-	while (qdisc_restart(q)) {
+	// 循环从队列取出一个skb 并发送
+	while (qdisc_restart(q)) { // qdisc_restart 用于数据的发送
 		/*
 		 * Ordered by possible occurrence: Postpone processing if
 		 * 1. we've exceeded packet quota
 		 * 2. another process needs the CPU;
+		   如果发生下面情况之一， 则延后处理
+		   1. quota 用尽
+		   2. 其他进程需要CPU
+			qdisc 的另一个功能是用于控制网络包的发送速度，因而如果超过速度，就需要重新调度，则会调用 __netif_schedule。
 		 */
 		if (--quota <= 0 || need_resched()) {
 			__netif_schedule(q);

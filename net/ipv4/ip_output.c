@@ -195,9 +195,9 @@ static inline int ip_finish_output2(struct sk_buff *skb)
 	rcu_read_lock_bh();
 	// 根据下一跳的ip地址查找邻居项，找不到就创建一个
 	nexthop = (__force u32) rt_nexthop(rt, ip_hdr(skb)->daddr);
-	neigh = __ipv4_neigh_lookup_noref(dev, nexthop);
+	neigh = __ipv4_neigh_lookup_noref(dev, nexthop); // 通过 __ipv4_neigh_lookup_noref，查找如何通过二层访问下一跳。  __ipv4_neigh_lookup_noref 是从本地的 ARP 表中查找下一跳的 MAC 地址
 	if (unlikely(!neigh))
-		neigh = __neigh_create(&arp_tbl, &nexthop, dev, false);
+		neigh = __neigh_create(&arp_tbl, &nexthop, dev, false);  // 如果在 ARP 表中没有找到相应的项，则调用 __neigh_create 进行创建。
 	if (!IS_ERR(neigh)) {
 		int res = dst_neigh_output(dst, neigh, skb); // 继续向下层传递
 
@@ -220,6 +220,7 @@ static inline int ip_skb_dst_mtu(struct sk_buff *skb)
 	       skb_dst(skb)->dev->mtu : dst_mtu(skb_dst(skb));
 }
 
+// 从 ip_finish_output 函数开始，发送网络包的逻辑由第三层到达第二层
 static int ip_finish_output(struct sk_buff *skb)
 {
 // CONFIG_NETFILTER 是 Linux 内核中的一个配置选项，用于启用网络过滤器子系统（Netfilter）
@@ -307,7 +308,7 @@ int ip_output(struct sk_buff *skb)
 	skb->dev = dev;
 	skb->protocol = htons(ETH_P_IP);
 
-	return NF_HOOK_COND(NFPROTO_IPV4, NF_INET_POST_ROUTING, skb, NULL, dev,
+	return NF_HOOK_COND(NFPROTO_IPV4, NF_INET_POST_ROUTING, skb, NULL, dev, // NF_INET_POST_ROUTING，也即 POSTROUTING 链
 			    ip_finish_output,
 			    !(IPCB(skb)->flags & IPSKB_REROUTED)); // 再次交给 netfilter ，完毕后回调 ip_finish_output
 }
@@ -391,7 +392,7 @@ packet_routed:
 	else
 		iph->frag_off = 0;
 	iph->ttl      = ip_select_ttl(inet, &rt->dst);
-	iph->protocol = sk->sk_protocol;
+	iph->protocol = sk->sk_protocol; // 设置 protocol，指的是更上层的协议，这里是 TCP
 	ip_copy_addrs(iph, fl4);
 
 	/* Transport layer set skb->h.foo itself. */

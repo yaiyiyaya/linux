@@ -464,7 +464,7 @@ struct neighbour *__neigh_create(struct neigh_table *tbl, const void *pkey,
 	u32 hash_val;
 	int key_len = tbl->key_len;
 	int error;
-	struct neighbour *n1, *rc, *n = neigh_alloc(tbl, dev);
+	struct neighbour *n1, *rc, *n = neigh_alloc(tbl, dev); // 调用 neigh_alloc，创建一个 struct neighbour 结构，用于维护 MAC 地址和 ARP 相关的信息。
 	struct neigh_hash_table *nht;
 
 	if (!n) {
@@ -1289,7 +1289,7 @@ int neigh_resolve_output(struct neighbour *neigh, struct sk_buff *skb)
 	if (!dst)
 		goto discard;
 
-	if (!neigh_event_send(neigh, skb)) {
+	if (!neigh_event_send(neigh, skb)) { // neigh_event_send 触发一个事件，看能否激活 ARP。
 		int err;
 		struct net_device *dev = neigh->dev;
 		unsigned int seq;
@@ -1300,12 +1300,12 @@ int neigh_resolve_output(struct neighbour *neigh, struct sk_buff *skb)
 		do {
 			__skb_pull(skb, skb_network_offset(skb));
 			seq = read_seqbegin(&neigh->ha_lock);
-			err = dev_hard_header(skb, dev, ntohs(skb->protocol),
+			err = dev_hard_header(skb, dev, ntohs(skb->protocol), // neigh->ha 是MAC地址
 					      neigh->ha, NULL, skb->len);
 		} while (read_seqretry(&neigh->ha_lock, seq));
 
 		if (err >= 0)
-			rc = dev_queue_xmit(skb);
+			rc = dev_queue_xmit(skb); // 调用 dev_queue_xmit 发送二层网络包了。
 		else
 			goto out_kfree_skb;
 	}
